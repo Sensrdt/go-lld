@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"time"
@@ -9,27 +10,7 @@ import (
 
 var names = []string{"Sridip", "John", "Alex", "Carry", "Emily", "Max", "Leela", "Sophia", "Jake", "Liam"}
 
-func GenerateBanks(numBanks int) []*Bank {
-	rand.Seed(time.Now().UnixNano())
-
-	var banks []*Bank
-	for i := 1; i <= numBanks; i++ {
-		bank := InitBank("Bank_" + strconv.Itoa(i))
-		numUsers := rand.Intn(100) + 1 // 1–10 users per bank
-
-		for j := 0; j < numUsers; j++ {
-			name := names[rand.Intn(len(names))] + " " + fmt.Sprintf("User%d", rand.Intn(1000))
-			account := Account{
-				Name: name,
-				Card: GenerateCard(),
-			}
-			bank.AddAccount(account)
-		}
-		banks = append(banks, bank)
-	}
-	return banks
-}
-
+// GenerateCard creates a new card with random number and PIN
 func GenerateCard() Card {
 	return Card{
 		CardNumber: fmt.Sprintf("%03d-%03d-%04d-%03d", rand.Intn(999), rand.Intn(999), rand.Intn(9999), rand.Intn(999)),
@@ -37,63 +18,103 @@ func GenerateCard() Card {
 	}
 }
 
+// GenerateBanks creates a specified number of banks with random accounts
+func GenerateBanks(numBanks int) []*Bank {
+	rand.Seed(time.Now().UnixNano())
+
+	var banks []*Bank
+	for i := 1; i <= numBanks; i++ {
+		bank := InitBank("Bank_" + strconv.Itoa(i))
+		numUsers := rand.Intn(5) + 1 // 1-5 users per bank
+
+		for j := 0; j < numUsers; j++ {
+			name := names[rand.Intn(len(names))] + " " + fmt.Sprintf("User%d", rand.Intn(1000))
+			account := Account{
+				Name:    name,
+				Card:    GenerateCard(),
+				Balance: float64(rand.Intn(10000)), // Random initial balance
+			}
+			if err := bank.AddAccount(account); err != nil {
+				log.Printf("Failed to add account: %v", err)
+			}
+		}
+		banks = append(banks, bank)
+	}
+	return banks
+}
+
 func main() {
-	/*
-		Requirements
-		1. Bank
-			Accounts (Card associated)
-		2. Atm (Contain list of Banks)
-			WithdrawAmount
-			CheckBalance
-			ChangePin
-	*/
+	// Create some sample banks and accounts
+	banks := GenerateBanks(3)
 
-	bank := InitBank("SBI")
-	bank.AddAccount(Account{
-		Name: "Sridip Dutta",
-	})
-	bank.AddAccount(Account{
-		Name: "John Doe",
-	})
-	bank.AddAccount(Account{
-		Name: "Alex Leela",
-	})
-	bank.AddAccount(Account{
-		Name: "Carry Hedge",
-	})
-
-	card := Card{
-		CardNumber: "123-345-4561-123",
-		CardPin:    "1234",
+	// Convert []*Bank to []BankOperations
+	bankOperations := make([]BankOperations, len(banks))
+	for i, bank := range banks {
+		bankOperations[i] = bank
 	}
 
-	bank.addCard(2, card)
+	// Initialize ATM with the banks
+	atm := InitATM(bankOperations)
 
-	bank.ListOfBankAccount()
+	// Print available banks
+	fmt.Println("Available Banks:")
+	for _, bankName := range atm.ListBanks() {
+		fmt.Printf("- %s\n", bankName)
+	}
+	fmt.Println()
 
-	/*
-		listOfBanks := GenerateBanks(10)
-			for _, bank := range listOfBanks {
-				bank.ListOfBankAccount()
-			}
-	*/
+	// Print all accounts for demonstration
+	fmt.Println("All Bank Accounts:")
+	for _, bank := range banks {
+		bank.PrintAccountDetails()
+	}
 
-	var listOfBanks []*Bank
-	listOfBanks = append(listOfBanks, bank)
+	// Demonstrate ATM operations with the first account
+	firstBank := banks[0]
+	if len(firstBank.ListAccounts()) == 0 {
+		log.Fatal("No accounts available for demonstration")
+	}
 
-	atm := InitATM(listOfBanks)
+	firstAccount := firstBank.ListAccounts()[0]
+	card := firstAccount.GetCardDetails()
 
-	var _ (AtmOperation) = (*ATM)(nil)
+	// ATM Session Example
+	fmt.Println("\nATM Session Example:")
+	fmt.Printf("Using card: %s\n", card.CardNumber)
 
-	fmt.Println(atm.ListOfBanksAvailable())
+	// 1. Insert Card
+	if err := atm.InsertCard(card, card.CardPin); err != nil {
+		log.Fatalf("Failed to insert card: %v", err)
+	}
+	fmt.Println("Card accepted!")
 
-	/*
-		card := Card{
-			CardNumber: "825-879-8155-152",
-			CardPin:    "8652",
+	// 2. Check Balance
+	if balance, err := atm.CheckBalance(); err != nil {
+		log.Printf("Failed to check balance: %v", err)
+	} else {
+		fmt.Printf("Current balance: INR %.2f\n", balance)
+	}
+
+	// 3. Withdraw Money
+	withdrawAmount := 50.0
+	if err := atm.WithdrawMoney(withdrawAmount); err != nil {
+		fmt.Printf("Withdrawal failed: %v\n", err)
+	} else {
+		fmt.Printf("Successfully withdrew INR %.2f\n", withdrawAmount)
+		if balance, err := atm.CheckBalance(); err == nil {
+			fmt.Printf("New balance: INR %.2f\n", balance)
 		}
-	*/
+	}
 
-	pin := "1234"
-	fmt.Println(atm.InsertCard(card, pin))
+	// 4. Change PIN
+	newPin := "5678"
+	if err := atm.ChangePin(card.CardPin, newPin); err != nil {
+		fmt.Printf("Failed to change PIN: %v\n", err)
+	} else {
+		fmt.Println("PIN successfully changed!")
+	}
+
+	// 5. End Session
+	atm.EndSession()
+	fmt.Println("Session ended")
 }
