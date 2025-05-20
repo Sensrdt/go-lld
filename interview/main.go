@@ -23,7 +23,7 @@ func (s *SharedCounter) Value() int {
 	return s.count
 }
 
-func worker(val int, wg *sync.WaitGroup, resultChannel chan<- int, jobChannel <-chan int, counter *SharedCounter) {
+func worker(_ int, wg *sync.WaitGroup, resultChannel chan<- int, jobChannel <-chan int, counter *SharedCounter) {
 
 	defer wg.Done()
 	for jobs := range jobChannel {
