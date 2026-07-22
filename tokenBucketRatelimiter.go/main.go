@@ -2,42 +2,57 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
 type RateLimiter struct {
 	bucket chan struct{}
-	count  int
-	n      int
+	rate   int
 }
 
-func (r *RateLimiter) refillBucket() {
-	ticker := time.NewTicker(time.Second / time.Duration(r.n))
+// Create a new rate limiter.
+func NewRateLimiter(rate int) *RateLimiter {
+	rl := &RateLimiter{
+		bucket: make(chan struct{}, rate),
+		rate:   rate,
+	}
+
+	// Fill the bucket initially.
+	for i := 0; i < rate; i++ {
+		rl.bucket <- struct{}{}
+	}
+
+	// Start refilling tokens.
+	go rl.refill()
+
+	return rl
+}
+
+// Add one token every (1/rate) second.
+func (r *RateLimiter) refill() {
+	ticker := time.NewTicker(time.Second / time.Duration(r.rate))
+	defer ticker.Stop()
+
 	for range ticker.C {
 		select {
 		case r.bucket <- struct{}{}:
-			// added
+			// Added a token.
 		default:
-			// done
+			// Bucket already full.
 		}
 	}
 }
 
-func NewRateLimiter(n int) *RateLimiter {
-	rateLimiter := &RateLimiter{
-		bucket: make(chan struct{}, n),
-		count:  0,
-		n:      n,
-	}
-
-	for range n {
-		rateLimiter.bucket <- struct{}{}
-	}
-
-	return rateLimiter
+// Blocking call.
+// Waits until a token is available.
+func (r *RateLimiter) Take() {
+	<-r.bucket
 }
 
-func (r *RateLimiter) CanTake() bool {
+// Non-blocking call.
+// Returns false immediately if no token is available.
+func (r *RateLimiter) TryTake() bool {
 	select {
 	case <-r.bucket:
 		return true
@@ -46,33 +61,26 @@ func (r *RateLimiter) CanTake() bool {
 	}
 }
 
-func (r *RateLimiter) Take() {
-	<-r.bucket
-	r.count++
-}
-
 func main() {
+	// Allow 3 requests per second.
+	rl := NewRateLimiter(4)
 
-	rl := NewRateLimiter(1) // 2 operations per second
+	var wg sync.WaitGroup
 
-	go rl.refillBucket()
+	for i := 1; i <= 10; i++ {
+		wg.Add(1)
 
-	// First two succeed immediately.
-	fmt.Println(rl.CanTake()) // true
-	fmt.Println(rl.CanTake()) // true
+		go func(id int) {
+			defer wg.Done()
 
-	// Bucket is empty.
-	fmt.Println(rl.CanTake()) // false
+			rl.Take() // Wait for permission.
+			// <-rl.bucket
 
-	fmt.Println("Waiting for tokens...")
+			fmt.Printf("Request %d executed at %s\n",
+				id,
+				time.Now().Format("15:04:05.000"))
+		}(i)
+	}
 
-	rl.Take()
-	fmt.Println("Allowed at:", time.Now().Format("15:04:05.000"))
-
-	rl.Take()
-	fmt.Println("Allowed at:", time.Now().Format("15:04:05.000"))
-
-	rl.Take()
-	fmt.Println("Allowed at:", time.Now().Format("15:04:05.000"))
-
+	wg.Wait()
 }
